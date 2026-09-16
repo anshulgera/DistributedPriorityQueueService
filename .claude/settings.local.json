@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(java -version)",
+      "Bash(docker --version)",
+      "Bash(gradle wrapper *)",
+      "Bash(curl -sI --max-time 10 -L https://services.gradle.org/distributions/gradle-9.7.1-bin.zip)",
+      "Bash(./gradlew --version)",
+      "Bash(env)",
+      "Bash(JAVA_OPTS=\"-Djava.net.preferIPv4Stack=true\" ./gradlew --version)",
+      "Bash(gradle build *)"
+    ]
+  }
+}

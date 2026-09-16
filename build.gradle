@@ -1,0 +1,68 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+group = 'com.dpqs'
+version = '0.1.0'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+application {
+    mainClass = 'com.dpqs.service.App'
+}
+
+repositories {
+    mavenCentral()
+}
+
+// Dedicated source set for integration tests, kept separate from unit tests
+// so the two can be run as distinct CI pipeline stages.
+sourceSets {
+    integrationTest {
+        java.srcDir 'src/integrationTest/java'
+        resources.srcDir 'src/integrationTest/resources'
+        compileClasspath += sourceSets.main.output + sourceSets.test.output
+        runtimeClasspath += sourceSets.main.output + sourceSets.test.output
+    }
+}
+
+configurations {
+    integrationTestImplementation.extendsFrom testImplementation
+    integrationTestRuntimeOnly.extendsFrom testRuntimeOnly
+}
+
+dependencies {
+    implementation 'io.javalin:javalin:6.3.0'
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.18.0'
+    implementation 'org.slf4j:slf4j-simple:2.0.16'
+
+    testImplementation platform('org.junit:junit-bom:5.11.3')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+    integrationTestImplementation 'io.rest-assured:rest-assured:5.5.0'
+}
+
+test {
+    useJUnitPlatform()
+}
+
+// Independent task so integration tests are a distinct pipeline stage that
+// can run against a separately deployed instance, without re-running unit tests.
+tasks.register('integrationTest', Test) {
+    description = 'Runs integration tests against a running SERVICE_BASE_URL instance.'
+    group = 'verification'
+    testClassesDirs = sourceSets.integrationTest.output.classesDirs
+    classpath = sourceSets.integrationTest.runtimeClasspath
+    useJUnitPlatform()
+    // Not part of `check`/`test` — this hits a live, deployed service and is
+    // wired into CI as its own job, not run as a side effect of `./gradlew build`.
+    shouldRunAfter test
+    // SERVICE_BASE_URL is read directly from the environment by the test itself;
+    // the forked test JVM inherits the environment of the invoking `./gradlew` process.
+}

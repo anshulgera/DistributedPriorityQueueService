@@ -1,0 +1,161 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}:${{ github.sha }}
+
+jobs:
+  # Compile, unit test, build the image once, and push it to ghcr.io tagged
+  # with the git SHA. Every later stage deploys this exact same tag — nothing
+  # is rebuilt after this job (build-once/promote-same-artifact).
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Compile
+        run: ./gradlew compileJava --no-daemon
+
+      - name: Unit tests
+        run: ./gradlew test --no-daemon
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build image
+        run: docker build -t "$IMAGE" .
+
+      - name: Push image
+        run: docker push "$IMAGE"
+
+  # Deploys the promoted image as an ephemeral "staging" container on this
+  # runner and confirms it comes up healthy. See README for why this isn't a
+  # persistent staging host.
+  deploy-staging:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: docker compose up (staging profile)
+        run: IMAGE_TAG="$IMAGE" docker compose --profile staging up -d
+
+      - name: Wait for /health
+        run: |
+          for i in $(seq 1 20); do
+            curl -sf http://localhost:8080/health && exit 0
+            sleep 2
+          done
+          echo "staging never became healthy" >&2
+          docker compose --profile staging logs
+          exit 1
+
+      - name: Tear down
+        if: always()
+        run: docker compose --profile staging down
+
+  # Runs the real integration-test suite (JUnit 5 + REST Assured) over HTTP
+  # against a fresh instance of the exact image that deploy-staging validated.
+  # This is the promotion gate: deploy-prod cannot run unless this job passes.
+  integration-tests-staging:
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: docker compose up (staging profile)
+        run: IMAGE_TAG="$IMAGE" docker compose --profile staging up -d
+
+      - name: Wait for /health
+        run: |
+          for i in $(seq 1 20); do
+            curl -sf http://localhost:8080/health && exit 0
+            sleep 2
+          done
+          echo "staging never became healthy" >&2
+          docker compose --profile staging logs
+          exit 1
+
+      - name: Run integration tests against staging
+        env:
+          SERVICE_BASE_URL: http://localhost:8080
+        run: ./gradlew integrationTest --no-daemon
+
+      - name: Tear down
+        if: always()
+        run: docker compose --profile staging down
+
+  # Only runs if the integration-test gate above passed. Deploys the exact
+  # same image tag that was just verified in staging - no rebuild, no
+  # different artifact.
+  deploy-prod:
+    needs: [build, integration-tests-staging]
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: docker compose up (prod profile)
+        run: IMAGE_TAG="$IMAGE" docker compose --profile prod up -d
+
+      - name: Wait for /health
+        run: |
+          for i in $(seq 1 20); do
+            curl -sf http://localhost:8081/health && exit 0
+            sleep 2
+          done
+          echo "prod never became healthy" >&2
+          docker compose --profile prod logs
+          exit 1
+
+      - name: Tear down
+        if: always()
+        run: docker compose --profile prod down
