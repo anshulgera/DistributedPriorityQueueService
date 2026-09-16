@@ -6,9 +6,6 @@ on:
   pull_request:
   workflow_dispatch:
 
-env:
-  IMAGE: ghcr.io/${{ github.repository }}:${{ github.sha }}
-
 jobs:
   # Compile, unit test, build the image once, and push it to ghcr.io tagged
   # with the git SHA. Every later stage deploys this exact same tag — nothing
@@ -19,6 +16,9 @@ jobs:
       contents: read
       packages: write
     steps:
+      - name: Compute image tag
+        run: echo "IMAGE=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]'):${{ github.sha }}" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-java@v4
@@ -54,6 +54,9 @@ jobs:
     permissions:
       packages: read
     steps:
+      - name: Compute image tag
+        run: echo "IMAGE=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]'):${{ github.sha }}" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v4
 
       - name: Log in to ghcr.io
@@ -89,6 +92,9 @@ jobs:
     permissions:
       packages: read
     steps:
+      - name: Compute image tag
+        run: echo "IMAGE=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]'):${{ github.sha }}" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-java@v4
@@ -134,6 +140,9 @@ jobs:
     permissions:
       packages: read
     steps:
+      - name: Compute image tag
+        run: echo "IMAGE=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]'):${{ github.sha }}" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v4
 
       - name: Log in to ghcr.io
