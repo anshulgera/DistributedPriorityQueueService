@@ -529,6 +529,13 @@ docker compose --profile prod down
 build → deploy-staging → integration-tests-staging → deploy-prod
 ```
 
+**PRs vs. pushes to `main`.** A `pull_request` event only runs `build`'s
+compile + unit-test steps — fast, cheap feedback, since this repo is built
+through many small review PRs (see the implementation plan). The image
+build/push and every stage after it (`deploy-staging`,
+`integration-tests-staging`, `deploy-prod`) only run on a `push` to `main`,
+i.e. after a PR has actually merged.
+
 **Build once, promote the same artifact.** `build` compiles, runs unit
 tests, builds exactly one Docker image, tags it with the git SHA
 (`ghcr.io/<repo>:<sha>`), and pushes it to GHCR. Every later stage

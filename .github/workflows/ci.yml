@@ -10,6 +10,13 @@ jobs:
   # Compile, unit test, build the image once, and push it to ghcr.io tagged
   # with the git SHA. Every later stage deploys this exact same tag — nothing
   # is rebuilt after this job (build-once/promote-same-artifact).
+  #
+  # The image build/push steps (and every job downstream of them) only run
+  # on a push to main. A pull_request event only compiles and unit-tests —
+  # fast, cheap feedback for the many small review PRs this repo is built
+  # through. The full build → deploy-staging → integration-tests-staging →
+  # deploy-prod pipeline still runs exactly as before, just gated to after
+  # a PR has actually merged, not on every push to the PR branch itself.
   build:
     runs-on: ubuntu-latest
     permissions:
@@ -33,6 +40,7 @@ jobs:
         run: ./gradlew test --no-daemon
 
       - name: Log in to ghcr.io
+        if: github.event_name == 'push'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -40,16 +48,19 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build image
+        if: github.event_name == 'push'
         run: docker build -t "$IMAGE" .
 
       - name: Push image
+        if: github.event_name == 'push'
         run: docker push "$IMAGE"
 
   # Deploys the promoted image as an ephemeral "staging" container on this
   # runner and confirms it comes up healthy. See README for why this isn't a
-  # persistent staging host.
+  # persistent staging host. Push-only, per the note on `build` above.
   deploy-staging:
     needs: build
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       packages: read
@@ -86,8 +97,10 @@ jobs:
   # Runs the real integration-test suite (JUnit 5 + REST Assured) over HTTP
   # against a fresh instance of the exact image that deploy-staging validated.
   # This is the promotion gate: deploy-prod cannot run unless this job passes.
+  # Push-only, per the note on `build` above.
   integration-tests-staging:
     needs: deploy-staging
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       packages: read
@@ -133,9 +146,10 @@ jobs:
 
   # Only runs if the integration-test gate above passed. Deploys the exact
   # same image tag that was just verified in staging - no rebuild, no
-  # different artifact.
+  # different artifact. Push-only, per the note on `build` above.
   deploy-prod:
     needs: [build, integration-tests-staging]
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       packages: read
