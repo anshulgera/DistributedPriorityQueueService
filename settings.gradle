@@ -1,1 +1,11 @@
+// Lets Gradle download a matching JDK itself when the toolchain requested in
+// build.gradle (Java 21) isn't already installed, instead of failing with
+// "Toolchain download repositories have not been configured." Needed for
+// anyone building this locally without a preinstalled JDK 21 — CI already
+// installs 21 explicitly via actions/setup-java, so this only changes local
+// builds, not CI behavior.
+plugins {
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
+}
+
 rootProject.name = 'distributed-priority-queue-service'
